@@ -71,8 +71,11 @@ class Stream():
         self.codec_type = stream_item["codec_type"]
 
         self.disposition = stream_item["disposition"]
-        self.tags = stream_item["tags"]
-
+        
+        try: 
+            self.tags = stream_item["tags"]
+        except KeyError:
+            self.tags = None
 
     def display_stream_data(self):
         """ Displays Stream data """
@@ -92,8 +95,9 @@ class Stream():
 
         s += "\tTags:\n"
 
-        for key, val in self.tags.items():
-            s += f"\t{key.replace('_', ' ').title():<27}: {val}\n"
+        if self.tags:
+            for key, val in self.tags.items():
+                s += f"\t{key.replace('_', ' ').title():<27}: {val}\n"
 
         s += "\n"
 

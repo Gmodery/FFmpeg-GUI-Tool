@@ -7,6 +7,7 @@ A simple GUI tool built on PyQt6 for viewing audio and video metadata and perfor
 ### Features:
 - Load individual files
 - View stream and format data
+- Single file format conversion
 
 ### Planned Features:
 - Load and process multiple files

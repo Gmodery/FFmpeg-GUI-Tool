@@ -1,209 +1,236 @@
-import os, sys
+import os, sys, utils
 from File import File
 from FFmpegWorker import FFmpegWorker, FFProbeWorker
+from CoreWidgets import *
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QWidget, 
-    QVBoxLayout, QHBoxLayout, QPushButton, QButtonGroup, 
-    QSplitter, QFileDialog, QScrollArea, QDialog, 
-    QDialogButtonBox, QRadioButton
+    QApplication, QMainWindow, QLabel, 
+    QVBoxLayout, QHBoxLayout, QPushButton, QButtonGroup, QFileDialog, QDialog, 
+    QMessageBox, QRadioButton, QFrame, QProgressBar
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-# Widgets are UI elements (windows, dialogs, controls)
-# Layouts position widgets
-# Signals/slots are events/functions (e.g. button.clicked.connect(function) is a slot assigned to a signal (clicked)). Always use signals, don't call functions directly
-# Threading: Classes can be extended with QThread to run separate from the UI
-# QSS is CSS but specifically for PyQt6
 
-class FileSelectorWidget(QWidget):
-    """Left pane for selecting loaded files and signaling update of info to infowidget"""
-
-    def __init__(self, info_widget):
-        super().__init__()
-
-        self.info_widget = info_widget
-
-        self.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                margin: 0px;
-                padding: 4px 8px;
-                border: 1px solid #555;
-                border-radius: 6px;
-                text-align: left;
-            }
-                        
-            QPushButton:checked {
-                background-color: #6d28d9;
-                margin: 0px;
-                padding: 4px 8px;
-                border: 1px solid #555;
-                border-radius: 6px;
-                text-align: left;
-            }
-                        
-            QPushButton:hover { background-color: #6d28d9; }
-        """)
-
-        self.layout = QVBoxLayout()
-
-        self.layout.setSpacing(0)
-        self.layout.setContentsMargins(4,0,0,0)
-        self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # Maps buttons to file objects
-        self.button_file_map = {}
-
-        self.button_group = QButtonGroup(self)
-        self.button_group.setExclusive(True)
-
-        # When button is clicked, send updateInfo the associated file object to update its text
-        self.button_group.buttonClicked.connect(lambda btn: self.updateInfo(self.button_file_map[btn]))
-
-
-        self.setLayout(self.layout)
-
-
-    def updateInfo(self, file: File):
-        """ Updates the info widget's info label's text accordingly """
-
-        self.info_widget.info_label.setText(file.display_full_data())
-
-
-    def removeAllButtons(self):
-        for button in self.button_group.buttons().copy():
-            self.button_group.removeButton(button)
-            button.deleteLater()
-
-
-    def addButton(self, file: File, selected=False):
-        btn = QPushButton(file.button_format_name)
-        
-        btn.setCheckable(True)
-        
-        self.button_file_map[btn] = file
-
-        # If preselected, set checked and call function to update info window
-        if selected:
-            btn.setChecked(True)
-
-            self.updateInfo(file)
-
-
-        self.button_group.addButton(btn)
-
-        self.layout.addWidget(btn)
-
-
-
-class InfoWidget(QWidget):
-    """ Takes FileSelectorWidget in initialization so it can listen to changes in selections """
-
-    def __init__(self):
-        super().__init__()
+class ConversionDialog(QDialog):
+    def __init__(self, file: File, parent=None):
+        super().__init__(parent)
 
         self.setStyleSheet("""
             QLabel {
                 margin: 0px;
                 padding: 4px 8px;
-                border: 1px solid #555;
-                qproperty-alignment: AlignLeft;
-            }
-
-            QLabel#file_data_label {
-                margin: 0px;
-                padding: 4px 8px;
-                border: 0px;
                 qproperty-alignment: AlignCenter;
-            }               
-            
-            QPushButton:hover { background-color: #6d28d9; }
+            }
+                           
+            QLabel[class="section-header"] {
+                margin-bottom: 0px;
+                padding: 0px 0px;
+                qproperty-alignment: AlignCenter;
+            }
         """)
 
-        # Simple VBox layout to display text
-        layout = QVBoxLayout()
-
-        file_data_label = QLabel("File Data")
-        file_data_label.setObjectName("file_data_label")
-
-        layout.addWidget(file_data_label)
-
-        # Scroll area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-
-        # Make label class item so it can be modified
-        self.info_label = QLabel()
-        self.info_label.setWordWrap(True)
-        self.info_label.setFont((QFont("Courier New", 10)))
-        self.info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-
-        # Add the scroll widget to layout
-        scroll.setWidget(self.info_label)
-        layout.addWidget(scroll)
-
-        layout.setSpacing(12)
-        layout.setContentsMargins(0,0,0,12)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-
-        # Now finally set this class' layout as the one just constructed
-        self.setLayout(layout)
-
-
-
-class CentralWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        self.info_widget = InfoWidget()
-        self.file_selector_widget = FileSelectorWidget(info_widget=self.info_widget)
-
-        splitter.addWidget(self.file_selector_widget)
-        splitter.addWidget(self.info_widget)
-
-        splitter.setSizes([200,600])
-
-        layout = QHBoxLayout()
-
-        layout.setSpacing(0)
-        layout.setContentsMargins(0,0,0,0)
-        
-        layout.addWidget(splitter)
-
-        self.setLayout(layout)
-
-
-
-class ConversionDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
         self.setWindowTitle("Convert Format")
+        self.setFixedSize(700, 250)
 
         # VBox holding HBox holding Vboxes
         primary_layout = QVBoxLayout()
 
         # Holds labels and radio buttons
-        layout = QHBoxLayout()
-        primary_layout.addLayout(layout)
+        h_layout = QHBoxLayout()
+        primary_layout.addLayout(h_layout)
 
-        layout.addWidget(QLabel("Example Text"))
+        # Shows current format and details
+        # Frame for left border
+        left_frame = QFrame()
+        left_frame.setFrameStyle(QFrame.Shape.Box)
+        left_frame.setLineWidth(2)
+
+        # VBox layout who's parent is the frame
+        left_frame_layout = QVBoxLayout(left_frame)
+
+        # Outermost left layout containing > frame > frame layout
+        left_vlayout = QVBoxLayout()
+        left_vlayout.addWidget(left_frame)
+        
 
 
-        # Add to bottom of primary layout
-        buttons = QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
-        self.button_box = QDialogButtonBox(buttons)
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
+        # Shows conversion options as radio buttons
+        # Frame for right border
+        right_frame = QFrame()
+        right_frame.setFrameStyle(QFrame.Shape.Box)
+        right_frame.setLineWidth(2)
 
-        primary_layout.addWidget(self.button_box)
+        # VBox layout who's parent is the frame
+        right_frame_layout = QVBoxLayout(right_frame)
+
+        # Outermost right layout containing > frame > frame layout
+        right_vlayout = QVBoxLayout()
+        right_vlayout.addWidget(right_frame)
+
+
+
+        center_layout = QHBoxLayout()
+        to_label = QLabel("To")
+        font = to_label.font()
+        font.setPointSize(14)
+        to_label.setFont(font)
+        center_layout.addWidget(to_label)
+
+
+        h_layout.addLayout(left_vlayout)
+        h_layout.addLayout(center_layout)
+        h_layout.addLayout(right_vlayout)
+
+
+        # Get file extension based on ffprobe data
+        file_ext = utils.getFileFormatExt(file)
+
+
+        # Left elements
+        name_label = QLabel(f"Converting:\n {file.name}\n\nFrom: {file.f_format_raw['format_long_name']} ({file_ext})")
+        font = name_label.font()
+        font.setPointSize(12)
+        name_label.setFont(font)
+
+        name_label.setWordWrap(True)
+
+        left_frame_layout.addWidget(name_label)
+
+
+        # Audio Formats
+        audio_compressed_formats = ["mp3", "aac/m4a", "ogg", "wma", "ac3/eac3"]
+        audio_lossless_formats = ["flac", "wav", "aif/aiff", "pcm"]
+        audio_section_label_headers = [QLabel("<u>Compressed Formats</u>"), QLabel("<u>Lossless Formats</u>")]
+
+        # Video Formats
+        modern_containers_video = ["mp4", "mkv", "mov", "webm"]
+        legacy_web_formats_video = ["avi", "wmv/asf", "flv/f4v"]
+        broadcast_media_formats_video = ["ts/m2ts/mts", "mpg/mpeg/vob"]
+        animated_image_formats_video = ["gif", "apng"]
+        video_section_label_headers = [QLabel("<u>Modern Formats</u>"), QLabel("<u>Legacy Formats</u>"), QLabel("<u>Broadcast Formats</u>"), QLabel("<u>Animated image Formats</u>")]
+        
+        is_audio = file_ext in audio_compressed_formats + audio_lossless_formats
+
+        # Set format list according to media type
+        format_list = [audio_compressed_formats, audio_lossless_formats] if is_audio else [modern_containers_video, legacy_web_formats_video, broadcast_media_formats_video, animated_image_formats_video]
+
+        # Set headers according to media type
+        section_label_headers = audio_section_label_headers if is_audio else video_section_label_headers
+
+        # Right layout (radio buttons)
+        self.button_group = QButtonGroup()
+        
+        for i, formats in enumerate(format_list):
+            header_layout = QHBoxLayout()
+            header_layout.addWidget(section_label_headers[i])
+            right_frame_layout.addLayout(header_layout)
+            
+            for j, f_format in enumerate(formats):
+                # Add HBox layouts of 3 columns for each set
+                if j % 3 == 0:
+                    if j > 0:
+                        right_frame_layout.addLayout(temp_layout)
+
+                    temp_layout = QHBoxLayout()
+                    temp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter) 
+
+                # Create button and add it to group
+                radio_button = QRadioButton(f_format)
+                self.button_group.addButton(radio_button)
+
+                # Set enabled, unless this is already its file type
+                if f_format == file_ext:
+                    radio_button.setEnabled(False)
+
+                # Add the widget
+                temp_layout.addWidget(radio_button)
+
+            # Add last row in if it didn't complete
+            if j % 3 != 0:
+                right_frame_layout.addLayout(temp_layout)
+                
+
+        # Add cancel/ok bottom of primary layout
+        button_layout = QHBoxLayout()
+        btn_ok = QPushButton("OK")
+        btn_ok.clicked.connect(self.submit)
+
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.reject)
+
+        button_layout.addWidget(btn_cancel)
+        button_layout.addWidget(btn_ok)
+        
+        primary_layout.addLayout(button_layout)
 
 
         
         self.setLayout(primary_layout)
+
+
+    def submit(self):
+        """ Get the selected button, set that as the class variable, then call the dialog's 
+         self.accept function to return to MainWindow convertFile """
+
+        selected = self.button_group.checkedButton()
+
+        if selected:
+            self.selected_ext = selected.text().split("/")[0]
+
+        self.accept()
+
+
+
+class ProgressDialog(QDialog):
+    """ Creates and shows progress of running FFmpeg worker """
+
+    def __init__(self, parent, file, cmd):
+        super().__init__(parent)
+
+        self.file = file
+        self.cmd = cmd
+
+        self.setWindowTitle("Convert Format")
+        self.setFixedSize(500, 200)
+
+        primary_layout = QVBoxLayout()
+
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0,100)
+
+        primary_layout.addWidget(progress_bar)
+
+        self.btn_done = QPushButton("OK")
+        self.btn_done.clicked.connect(self.accept)
+        self.btn_done.setEnabled(False) # Off by default
+
+        primary_layout.addWidget(self.btn_done)
+        
+
+        self.setLayout(primary_layout)
+
+
+
+        self.worker = FFmpegWorker(cmd=cmd, file=file)
+
+        self.worker.progress.connect(progress_bar.setValue)
+        # self.worker.log_line.connect(log_output.append)
+        self.worker.finished.connect(self.onFinished)
+        self.worker.error.connect(self.onError)
+
+        self.worker.start()
+
+        
+
+
+    def onFinished(self):
+        QMessageBox.information(self, "Success", f"File saved to: \n\n {self.cmd[-1]}")
+        self.close()
+        
+
+    def onError(self, msg):
+        QMessageBox.critical(self, "Error", msg)
+        self.close()
 
 
 
@@ -238,8 +265,9 @@ class MainWindow(QMainWindow):
         # Edit
         edit_menu = menu.addMenu("Edit")
 
-        convert_action = edit_menu.addAction("Convert to...")
-        convert_action.triggered.connect(self.convert_file)
+        self.convert_action = edit_menu.addAction("Convert to...")
+        self.convert_action.triggered.connect(lambda: self.convert_file(self.central_widget.file_selector_widget.getSelectedFile()))
+        self.convert_action.setEnabled(False) # False by default. Enables when a file is uploaded
 
 
         # View
@@ -252,11 +280,27 @@ class MainWindow(QMainWindow):
 
 
 
-    def convert_file(self):
-        dialog = ConversionDialog(self)
+    def convert_file(self, file: File):
+        """ Opens dialogue to get desired file format, then kicks off FFmpeg to do the job """
+
+        dialog = ConversionDialog(parent=self, file=file)
+        
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            print("Submitted")
+            # Strip the old extension and add the new one
+            newpath = f"{os.path.splitext(file.path)[0]}.{dialog.selected_ext}"
+
+            # Create the command
+            cmd = [
+                "ffmpeg", "-i", file.path,
+                 "-y", newpath
+            ]
+
+            # Pass the command to the progress dialog
+            dialog = ProgressDialog(parent=self, file=file, cmd=cmd)
+
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                return
 
 
 
@@ -264,7 +308,7 @@ class MainWindow(QMainWindow):
     
 
     def ffprobe_update(self, info):
-        """ Recieves the result signal (file info) emitted by the ffprobe thread, updates file accordingly, and adds the button for it """
+        """ Receives the result signal (file info) emitted by the ffprobe thread, updates file accordingly, and adds the button for it """
         
         # Select the first file (should be the only one here at this point (this will change when multiple are uploaded))
         file = self.files[0]
@@ -308,13 +352,15 @@ class MainWindow(QMainWindow):
         if file_path:
 
             # Set initial file data
-            self.files.append(
+            self.files = [(
                 File (
                     name=os.path.basename(file_path),
                     path=file_path
                 )
-            )
+            )]
             self.n_files = 1
+
+            self.convert_action.setEnabled(True)
 
             # Kick off ffprobe thread
             self.probe = FFProbeWorker(file_path)
@@ -341,8 +387,6 @@ app = QApplication(sys.argv)
 
 app.setStyleSheet("""
     QMainWindow { background-color: #1e1e2e; }
-    
-
 """)
 
 
